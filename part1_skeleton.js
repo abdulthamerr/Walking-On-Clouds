@@ -1,3 +1,31 @@
+var skyboxVertexShaderSource = `#version 300 es
+in vec4 a_position;
+out vec4 v_position;
+void main() {
+  v_position = a_position;
+  gl_Position = vec4(a_position.xy, 1, 1);
+}
+`;
+
+var skyboxFragmentShaderSource = `#version 300 es
+precision highp float;
+
+uniform samplerCube u_skybox;
+uniform mat4 u_viewDirectionProjectionInverse;
+
+in vec4 v_position;
+
+// we need to declare an output for the fragment shader
+out vec4 outColor;
+
+void main() {
+  vec4 t = u_viewDirectionProjectionInverse * v_position;
+  outColor = texture(u_skybox, normalize(t.xyz / t.w));
+}
+`;
+
+
+
 main();
 
 /************************************
@@ -51,11 +79,23 @@ function doDrawing(gl, canvas, inputTriangles) {
 
     var state = {
         camera: {
-            position: vec3.fromValues(0.5, 0.5, -0.5),
-            center: vec3.fromValues(0.5, 0.5, 0.0),
+            position: vec3.fromValues(0.0, 3.0, 5.0),
+            center: vec3.fromValues(0.0, 0.0, 0.0),
             up: vec3.fromValues(0.0, 1.0, 0.0),
         },
+        lights: [
+            {
+                position: vec3.fromValues(0.0, 5.0, 5.0),
+                colour: vec3.fromValues(1.0, 1.0, 1.0),
+                strength: 10.0,
+            }
+        ],
         objects: [],
+        skybox: [
+            {
+                texture: null,
+            }
+        ],
         canvas: canvas,
         selectedIndex: 0,
         hasSelected: false,
@@ -78,6 +118,22 @@ function doDrawing(gl, canvas, inputTriangles) {
 
         initBuffers(gl, state.objects[i], inputTriangles[i].vertices.flat(), inputTriangles[i].triangles.flat());
     }
+
+    twgl.setAttributePrefix("a_");
+    
+    
+    state.skybox.texture = twgl.createTexture(gl, {
+        target: gl.TEXTURE_CUBE_MAP,
+        src: [
+          '../materials/px.png',  
+          '../materials/nx.png',  
+          '../materials/py.png',  
+          '../materials/ny.png',  
+          '../materials/pz.png',  
+          '../materials/nz.png',  
+        ],
+        min: gl.LINEAR_MIPMAP_LINEAR,
+    });
 
     setupKeypresses(state);
 
@@ -121,15 +177,44 @@ function startRendering(gl, state) {
  */
 function drawScene(gl, deltaTime, state) {
     // Set clear colour
-    gl.clearColor(0.5, 0.5, 0.5, 1.0);
+    // gl.clearColor(0.5, 0.5, 0.5, 1.0);
 
-    // Enable depth testing
+    // // Enable depth testing
+    // gl.enable(gl.DEPTH_TEST);
+    // gl.depthFunc(gl.LEQUAL);
+    // gl.clearDepth(1.0);
+    gl.enable(gl.CULL_FACE);
     gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.clearDepth(1.0);
 
     // Clear the buffers
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    const projectionMatrix = mat4.create();
+        mat4.perspective(
+            projectionMatrix,
+            glMatrix.toRadian(60), // Field of view in radians
+            state.canvas.width / state.canvas.height, // Aspect ratio
+            0.1, // Near clipping plane
+            100.0 // Far clipping plane
+        );
+
+    const viewMatrix = mat4.create();
+    mat4.lookAt(
+        viewMatrix,
+        state.camera.position, // Camera position
+        state.camera.center, // Look-at point
+        state.camera.up // Up direction
+    );
+
+    var viewDirectionMatrix = m4.copy(viewMatrix);
+    viewDirectionMatrix[12] = 0;
+    viewDirectionMatrix[13] = 0;
+    viewDirectionMatrix[14] = 0;
+
+    var viewDirectionProjectionMatrix = m4.multiply(
+        projectionMatrix, viewDirectionMatrix);
+    var viewDirectionProjectionInverseMatrix =
+        m4.inverse(viewDirectionProjectionMatrix);
 
     state.objects.forEach((object) => {
         // Use the shader program for the object
@@ -140,26 +225,13 @@ function drawScene(gl, deltaTime, state) {
         // fovy = 60deg, near=0.1, far=100
         // Generate the projection matrix using perspective
         // link to corresponding uniform object.programInfo.uniformLocations.[...]
-        const projectionMatrix = mat4.create();
-        mat4.perspective(
-            projectionMatrix,
-            glMatrix.toRadian(60), // Field of view in radians
-            state.canvas.width / state.canvas.height, // Aspect ratio
-            0.1, // Near clipping plane
-            100.0 // Far clipping plane
-        );
+        
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, projectionMatrix);
 
         // TODO update view matrix with state.camera
         // use mat4.lookAt to generate the view matrix
         // link to corresponding uniform object.programInfo.uniformLocations.[...]
-        const viewMatrix = mat4.create();
-        mat4.lookAt(
-            viewMatrix,
-            state.camera.position, // Camera position
-            state.camera.center, // Look-at point
-            state.camera.up // Up direction
-        );
+    
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, viewMatrix);
 
         // TODO Update model transform
@@ -170,7 +242,7 @@ function drawScene(gl, deltaTime, state) {
         // translation (object.model.position), translation(centroid), rotation, scale, translation(negative centroid)
         // link to corresponding uniform object.programInfo.uniformLocations.[...]
         const modelMatrix = mat4.create();
-
+        //Need to update lights here
         mat4.translate(modelMatrix, modelMatrix, object.model.position);
 
         mat4.translate(modelMatrix, modelMatrix, object.centroid);
@@ -191,12 +263,31 @@ function drawScene(gl, deltaTime, state) {
         {
             // Bind the buffer we want to draw
             gl.bindVertexArray(object.buffers.vao);
+            
 
             // Draw the object
             const offset = 0; // Number of elements to skip before starting
             gl.drawElements(gl.TRIANGLES, object.buffers.numVertices, gl.UNSIGNED_SHORT, offset);
         }
     });
+
+    gl.depthFunc(gl.LEQUAL);
+
+    const skyboxProgramInfo = twgl.createProgramInfo(
+        gl, [skyboxVertexShaderSource, skyboxFragmentShaderSource]);
+
+    const quadBufferInfo = twgl.primitives.createXYQuadBufferInfo(gl);
+    const quadVAO = twgl.createVAOFromBufferInfo(gl, skyboxProgramInfo, quadBufferInfo);
+
+
+    gl.useProgram(skyboxProgramInfo.program);
+    gl.bindVertexArray(quadVAO);
+    twgl.setUniforms(skyboxProgramInfo, {
+      u_viewDirectionProjectionInverse: viewDirectionProjectionInverseMatrix,
+      u_skybox: state.skybox.texture,
+    });
+    twgl.drawBufferInfo(gl, quadBufferInfo);
+
 }
 
 
@@ -207,96 +298,80 @@ function drawScene(gl, deltaTime, state) {
 
 function setupKeypresses(state) {
     document.addEventListener("keydown", (event) => {
-        var object = state.objects[state.selectedIndex];
-        switch (event.code) {
-            case "KeyA":
-                if (event.getModifierState("Shift")) {
-                    if (state.hasSelected) {
-                        mat4.rotateY(object.model.rotation, object.model.rotation, glMatrix.toRadian(-10));
-                    } else {
-                        vec3.add(state.camera.center, state.camera.center, vec3.fromValues(-0.1, 0.0, 0.0));
-                        vec3.add(state.camera.position, state.camera.position, vec3.fromValues(-0.1, 0.0, 0.0));
-                    }
-                } else {
-                    if (state.hasSelected) {
-                        vec3.add(object.model.position, object.model.position, vec3.fromValues(-0.1, 0.0, 0.0));
-                    } else {
-                        vec3.add(state.camera.center, state.camera.center, vec3.fromValues(-0.1, 0.0, 0.0));
-                        vec3.add(state.camera.position, state.camera.position, vec3.fromValues(-0.1, 0.0, 0.0));
-                    }
-                }
-                break;
-            case "KeyD":
-                if (event.getModifierState("Shift")) {
-                    if (state.hasSelected) {
-                        mat4.rotateY(object.model.rotation, object.model.rotation, glMatrix.toRadian(10));
-                    } else {
-                        vec3.add(state.camera.center, state.camera.center, vec3.fromValues(0.1, 0.0, 0.0));
-                        vec3.add(state.camera.position, state.camera.position, vec3.fromValues(0.1, 0.0, 0.0));
-                    }
-                } else {
-                    if (state.hasSelected) {
-                        vec3.add(object.model.position, object.model.position, vec3.fromValues(0.1, 0.0, 0.0));
-                    } else {
-                        vec3.add(state.camera.center, state.camera.center, vec3.fromValues(0.1, 0.0, 0.0));
-                        vec3.add(state.camera.position, state.camera.position, vec3.fromValues(0.1, 0.0, 0.0));
-                    }
-                }
-                break;
-            case "KeyW":
-                if (state.hasSelected) {
-                    vec3.add(object.model.position, object.model.position, vec3.fromValues(0.0, -0.1, 0.0));
-                } else {
-                    vec3.add(state.camera.center, state.camera.center, vec3.fromValues(0.0, -0.1, 0.0));
-                    vec3.add(state.camera.position, state.camera.position, vec3.fromValues(0.0, -0.1, 0.0));
-                }
-                break;
-            case "KeyS":
-                if (state.hasSelected) {
-                    vec3.add(object.model.position, object.model.position, vec3.fromValues(0.0, 0.1, 0.0));
-                } else {
-                    vec3.add(state.camera.center, state.camera.center, vec3.fromValues(0.0, 0.1, 0.0));
-                    vec3.add(state.camera.position, state.camera.position, vec3.fromValues(0.0, 0.1, 0.0));
-                }
-                break;
-            case "ArrowUp":
-                if (state.hasSelected) {
-                    vec3.add(object.model.position, object.model.position, vec3.fromValues(0.0, 0.0, 0.1));
-                } else {
-                    vec3.add(state.camera.center, state.camera.center, vec3.fromValues(0.0, 0.0, 0.1));
-                    vec3.add(state.camera.position, state.camera.position, vec3.fromValues(0.0, 0.0, 0.1));
-                }
-                break;
-            case "ArrowDown":
-                if (state.hasSelected) {
-                    vec3.add(object.model.position, object.model.position, vec3.fromValues(0.0, 0.0, -0.1));
-                } else {
-                    vec3.add(state.camera.center, state.camera.center, vec3.fromValues(0.0, 0.0, -0.1));
-                    vec3.add(state.camera.position, state.camera.position, vec3.fromValues(0.0, 0.0, -0.1));
-                }
-                break;
-            case "Space":
-                if (!state.hasSelected) {
-                    state.hasSelected = true;
-                    changeSelectionText(state.objects[state.selectedIndex].name);
-                    vec3.scale(state.objects[state.selectedIndex].model.scale, state.objects[state.selectedIndex].model.scale, 1.2);
-                } else {
-                    state.hasSelected = false;
-                    document.getElementById("selectionText").innerHTML = "Selection: None";
-                    vec3.scale(state.objects[state.selectedIndex].model.scale, state.objects[state.selectedIndex].model.scale, 0.85);
-                }
+        console.log(event.code);
+
+        const rotationSpeed = 0.1; // speed of camera rotation (can be adjusted)
+        const moveSpeed = 0.1;    // speed of camera translation (can be adjusted)
+
+        // Camera movement controls
+        switch(event.code) {
+            case "ArrowRight":
+                // Move light to the right (already in your original code)
+                state.lights[0].position[0] += 0.1;
                 break;
             case "ArrowLeft":
-                if (state.hasSelected) {
-                    state.selectedIndex = (state.selectedIndex > 0) ? state.selectedIndex - 1 : state.objects.length - 1;
-                    changeSelectionText(state.objects[state.selectedIndex].name);
-                }
+                // Move light to the left
+                state.lights[0].position[0] -= 0.1;
                 break;
-            case "ArrowRight":
-                if (state.hasSelected) {
-                    state.selectedIndex = (state.selectedIndex < state.objects.length - 1) ? state.selectedIndex + 1 : 0;
-                    changeSelectionText(state.objects[state.selectedIndex].name);
-                }
+            case "KeyD":
+                // Rotate camera right (clockwise around the Y-axis)
+                const rotationMatrixD = mat4.create();
+                mat4.rotateY(rotationMatrixD, rotationMatrixD, -rotationSpeed);
+                vec3.transformMat4(state.camera.position, state.camera.position, rotationMatrixD);
+                vec3.transformMat4(state.camera.center, state.camera.center, rotationMatrixD);
+                break;
+            case "KeyA":
+                // Rotate camera left (counterclockwise around the Y-axis)
+                const rotationMatrixA = mat4.create();
+                mat4.rotateY(rotationMatrixA, rotationMatrixA, rotationSpeed);
+                vec3.transformMat4(state.camera.position, state.camera.position, rotationMatrixA);
+                vec3.transformMat4(state.camera.center, state.camera.center, rotationMatrixA);
+                break;
+            case "KeyW":
+                // Move camera forward (along the Z-axis)
+                const forward = vec3.create();
+                vec3.subtract(forward, state.camera.center, state.camera.position);  // Get direction vector from camera to center
+                vec3.normalize(forward, forward);  // Normalize it to get a unit vector
+                vec3.scale(forward, forward, moveSpeed);  // Scale it by moveSpeed
+                vec3.add(state.camera.position, state.camera.position, forward); // Translate the camera position forward
+                vec3.add(state.camera.center, state.camera.center, forward);  // Move the center along the same direction
+                break;
+            case "KeyS":
+                // Move camera backward (along the Z-axis)
+                const backward = vec3.create();
+                vec3.subtract(backward, state.camera.position, state.camera.center);  // Reverse direction vector
+                vec3.normalize(backward, backward);  // Normalize it
+                vec3.scale(backward, backward, moveSpeed);  // Scale by moveSpeed
+                vec3.add(state.camera.position, state.camera.position, backward);  // Translate the camera position backward
+                vec3.add(state.camera.center, state.camera.center, backward);  // Move the center along the same direction
+                break;
+            case "KeyQ":
+                // Move camera up (along the Y-axis)
+                const up = vec3.fromValues(0, 1, 0);  // Define the up direction (positive Y-axis)
+                vec3.scale(up, up, moveSpeed);  // Scale it by moveSpeed
+                vec3.add(state.camera.position, state.camera.position, up);  // Translate camera position upwards
+                vec3.add(state.camera.center, state.camera.center, up);  // Move the center upwards
+                break;
+            case "KeyE":
+                // Move camera down (along the Y-axis)
+                const down = vec3.fromValues(0, -1, 0);  // Define the down (negative Y-axis)
+                vec3.scale(down, down, moveSpeed);  // Scale by moveSpeed
+                vec3.add(state.camera.position, state.camera.position, down);  // Translate camera position downwards
+                vec3.add(state.camera.center, state.camera.center, down);  // Move the center downwards
+                break;
+            case "ArrowUp":
+                // Tilt camera up (rotate upwards around the X-axis)
+                const rotationMatrixUp = mat4.create();
+                mat4.rotateX(rotationMatrixUp, rotationMatrixUp, rotationSpeed); // Positive rotation around X-axis
+                vec3.transformMat4(state.camera.position, state.camera.position, rotationMatrixUp);
+                vec3.transformMat4(state.camera.center, state.camera.center, rotationMatrixUp);
+                break;
+            case "ArrowDown":
+                // Tilt camera down (rotate downwards around the X-axis)
+                const rotationMatrixDown = mat4.create();
+                mat4.rotateX(rotationMatrixDown, rotationMatrixDown, -rotationSpeed); // Negative rotation around X-axis
+                vec3.transformMat4(state.camera.position, state.camera.position, rotationMatrixDown);
+                vec3.transformMat4(state.camera.center, state.camera.center, rotationMatrixDown);
                 break;
             default:
                 break;
