@@ -23,22 +23,22 @@ void main() {
   outColor = texture(u_skybox, normalize(t.xyz / t.w));
 }
 `;
-
-
-
 main();
 
 /************************************
  * MAIN
  ************************************/
-
-
 function main() {
 
     console.log("Setting up the canvas");
 
     // Find the canavas tag in the HTML document
     const canvas = document.querySelector("#assignmentCanvas");
+     // Resize canvas to fit the window
+     resizeCanvasToFitScreen(canvas);
+
+     // Update size when the window resizes
+     window.addEventListener("resize", () => resizeCanvasToFitScreen(canvas));
 
     // Initialize the WebGL2 context
     var gl = canvas.getContext("webgl2");
@@ -49,37 +49,33 @@ function main() {
             'Check to see you are using a <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API#WebGL_2_2" class="alert-link">modern browser</a>.');
         return;
     }
+    // Initialize the state object
+    const state = {
+        objects: [], // Store all objects here
+        programInfo: null, // Add shader program info later
+    };
 
-    // Hook up the button
-    const fileUploadButton = document.querySelector("#fileUploadButton");
-    fileUploadButton.addEventListener("click", () => {
-        console.log("Submitting file...");
-        let fileInput = document.getElementById('inputFile');
-        let files = fileInput.files;
-        let url = URL.createObjectURL(files[0]);
-
-        fetch(url, {
-            mode: 'no-cors' // 'cors' by default
-        }).then(res => {
-            return res.text();
-        }).then(data => {
-            var inputTriangles = JSON.parse(data);
-
-            doDrawing(gl, canvas, inputTriangles);
-
-        }).catch((e) => {
-            console.error(e);
-        });
-
+        // Fetch the dog.json file
+    fetch('./dog.json')
+    .then(response => response.json())
+    .then(dogData => {
+        console.log("Dog data loaded");
+        doDrawing(gl, canvas, dogData);
+    })
+    .catch(error => {
+        console.error("Error loading dog.json:", error);
     });
+}
+function resizeCanvasToFitScreen(canvas) {
+    canvas.width = window.innerWidth;  // Set canvas width to window width
+    canvas.height = window.innerHeight; // Set canvas height to window height
 }
 
 function doDrawing(gl, canvas, inputTriangles) {
     // Create a state for our scene
-
     var state = {
         camera: {
-            position: vec3.fromValues(0.0, 3.0, 5.0),
+            position: vec3.fromValues(0.0,7.875, -19.015),
             center: vec3.fromValues(0.0, 0.0, 0.0),
             up: vec3.fromValues(0.0, 1.0, 0.0),
         },
@@ -100,7 +96,6 @@ function doDrawing(gl, canvas, inputTriangles) {
         selectedIndex: 0,
         hasSelected: false,
     };
-
     for (var i = 0; i < inputTriangles.length; i++) {
         state.objects.push({
             name: inputTriangles[i].name,
@@ -116,7 +111,8 @@ function doDrawing(gl, canvas, inputTriangles) {
         });
         
 
-        initBuffers(gl, state.objects[i], inputTriangles[i].vertices.flat(), inputTriangles[i].triangles.flat());
+        initBuffers(gl, state.objects[i], inputTriangles[i].vertices.flat(),
+        inputTriangles[i].triangles.flat());
     }
 
     twgl.setAttributePrefix("a_");
@@ -137,13 +133,9 @@ function doDrawing(gl, canvas, inputTriangles) {
 
     setupKeypresses(state);
 
-    //console.log(state)
-
     console.log("Starting rendering loop");
     startRendering(gl, state);
 }
-
-
 /************************************
  * RENDERING CALLS
  ************************************/
@@ -168,7 +160,6 @@ function startRendering(gl, state) {
     // Draw the scene
     requestAnimationFrame(render);
 }
-
 /**
  * Draws the scene. Should be called every frame
  * 
@@ -176,18 +167,12 @@ function startRendering(gl, state) {
  * @param {number} deltaTime Time between each rendering call
  */
 function drawScene(gl, deltaTime, state) {
-    // Set clear colour
-    // gl.clearColor(0.5, 0.5, 0.5, 1.0);
-
-    // // Enable depth testing
-    // gl.enable(gl.DEPTH_TEST);
-    // gl.depthFunc(gl.LEQUAL);
-    // gl.clearDepth(1.0);
     gl.enable(gl.CULL_FACE);
     gl.enable(gl.DEPTH_TEST);
 
     // Clear the buffers
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+     
 
     const projectionMatrix = mat4.create();
         mat4.perspective(
@@ -195,7 +180,7 @@ function drawScene(gl, deltaTime, state) {
             glMatrix.toRadian(60), // Field of view in radians
             state.canvas.width / state.canvas.height, // Aspect ratio
             0.1, // Near clipping plane
-            100.0 // Far clipping plane
+            5000.0 // Far clipping plane
         );
 
     const viewMatrix = mat4.create();
@@ -220,27 +205,15 @@ function drawScene(gl, deltaTime, state) {
         // Use the shader program for the object
         gl.useProgram(object.programInfo.program);
 
-        // TODO setup projection matrix (this doesn't change)
-        // use same params as in the lab5 example
-        // fovy = 60deg, near=0.1, far=100
-        // Generate the projection matrix using perspective
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
+        
         
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, projectionMatrix);
 
-        // TODO update view matrix with state.camera
-        // use mat4.lookAt to generate the view matrix
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
+       
     
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, viewMatrix);
 
-        // TODO Update model transform
-        // apply modeling transformations in correct order using
-        // object.model.position, object.model.rotation, object.model.scale
-        // for correct rotation wr centroid here is the order of operations 
-        // in reverse order of how they should be applied 
-        // translation (object.model.position), translation(centroid), rotation, scale, translation(negative centroid)
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
+        
         const modelMatrix = mat4.create();
         //Need to update lights here
         mat4.translate(modelMatrix, modelMatrix, object.model.position);
@@ -289,9 +262,6 @@ function drawScene(gl, deltaTime, state) {
     twgl.drawBufferInfo(gl, quadBufferInfo);
 
 }
-
-
-
 /************************************
  * UI EVENTS
  ************************************/
@@ -378,9 +348,6 @@ function setupKeypresses(state) {
         }
     });
 }
-
-
-
 /************************************
  * SHADER SETUP
  ************************************/
@@ -439,8 +406,6 @@ function transformShader(gl) {
 
     return programInfo;
 }
-
-
 /************************************
  * BUFFER SETUP
  ************************************/
@@ -515,8 +480,6 @@ function initPositionAttribute(gl, programInfo, positionArray) {
 
     return positionBuffer;
 }
-
-
 function initColourAttribute(gl, programInfo, colourArray) {
 
     // Create a buffer for the positions.
@@ -582,7 +545,6 @@ function initIndexBuffer(gl, elementArray) {
 
     return indexBuffer;
 }
-
 /**
  * 
  * @param {array of x,y,z vertices} vertices 
