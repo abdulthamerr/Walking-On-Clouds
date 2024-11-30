@@ -75,7 +75,7 @@ function doDrawing(gl, canvas, inputTriangles) {
     // Create a state for our scene
     var state = {
         camera: {
-            position: vec3.fromValues(0.0,7.875, -19.015),
+            position: vec3.fromValues(0.0,10.0, -20),
             center: vec3.fromValues(0.0, 0.0, 0.0),
             up: vec3.fromValues(0.0, 1.0, 0.0),
         },
@@ -114,9 +114,16 @@ function doDrawing(gl, canvas, inputTriangles) {
         initBuffers(gl, state.objects[i], inputTriangles[i].vertices.flat(),
         inputTriangles[i].triangles.flat());
     }
+    // Update dog position to be above the platform
+    state.objects.forEach((object) => {
+        if (object.name === 'body') {
+            object.model.position = vec3.fromValues(0.0, 3.0, 0.0); // Place dog 2 units above the platform
+        }
+    });
 
     twgl.setAttributePrefix("a_");
-    
+
+   
     
     state.skybox.texture = twgl.createTexture(gl, {
         target: gl.TEXTURE_CUBE_MAP,
@@ -132,10 +139,27 @@ function doDrawing(gl, canvas, inputTriangles) {
     });
 
     setupKeypresses(state);
+    // Create and bind the cloud texture
+    var cloudTexture = twgl.createTexture(gl, {
+        target: gl.TEXTURE_2D,
+        src: '../materials/cloud.png', // Path to cloud texture
+        min: gl.LINEAR,
+        mag: gl.LINEAR,
+    });
+
+    // Set the texture for the platform object
+    state.objects.forEach((object) => {
+        if (object.name === 'platform') {
+            gl.activeTexture(gl.TEXTURE0);  // Use texture unit 0
+            gl.bindTexture(gl.TEXTURE_2D, cloudTexture);
+            gl.uniform1i(object.programInfo.uniformLocations.u_texture, 0); // Pass the texture unit to the shader
+        }
+    });
 
     console.log("Starting rendering loop");
     startRendering(gl, state);
 }
+
 /************************************
  * RENDERING CALLS
  ************************************/
@@ -352,60 +376,63 @@ function setupKeypresses(state) {
  * SHADER SETUP
  ************************************/
 function transformShader(gl) {
-    // Vertex shader source code
     const vsSource = `#version 300 es
     in vec3 aPosition;
+    in vec2 aTexCoord; // Texture coordinates input
 
     uniform mat4 uProjectionMatrix;
     uniform mat4 uViewMatrix;
     uniform mat4 uModelMatrix;
 
+    out vec2 v_texCoord; // Pass texture coordinates to fragment shader
+
     void main() {
+        v_texCoord = aTexCoord; // Pass texture coordinates
         gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
     }`;
 
-    // Fragment shader source code
     const fsSource = `#version 300 es
     precision mediump float;
-
-    uniform vec3 uMaterialColor;
-
+    
+    uniform sampler2D u_texture; // texture sampler
+    in vec2 v_texCoord; // texture coordinates
     out vec4 fragColor;
 
     void main() {
-        fragColor = vec4(uMaterialColor, 1.0);
+        fragColor = texture(u_texture, v_texCoord); // Apply texture to fragment
     }`;
 
     // Create shader program
     const program = initShaderProgram(gl, vsSource, fsSource);
 
-    // Collect program information
     const programInfo = {
         program: program,
         attribLocations: {
             vertexPosition: gl.getAttribLocation(program, 'aPosition'),
+            vertexTexCoord: gl.getAttribLocation(program, 'aTexCoord'),
         },
         uniformLocations: {
             uProjectionMatrix: gl.getUniformLocation(program, 'uProjectionMatrix'),
             uViewMatrix: gl.getUniformLocation(program, 'uViewMatrix'),
             uModelMatrix: gl.getUniformLocation(program, 'uModelMatrix'),
-            uMaterialColor: gl.getUniformLocation(program, 'uMaterialColor'),
+            u_texture: gl.getUniformLocation(program, 'u_texture'),
         },
     };
 
-    // Check for missing locations
-    if (programInfo.attribLocations.vertexPosition === -1) {
-        console.error("Failed to locate attribute 'aPosition'");
+    if (programInfo.attribLocations.vertexPosition === -1 || programInfo.attribLocations.vertexTexCoord === -1) {
+        console.error("Failed to locate one or more attribute locations");
     }
+
     if (!programInfo.uniformLocations.uProjectionMatrix || 
-        !programInfo.uniformLocations.uViewMatrix ||
+        !programInfo.uniformLocations.uViewMatrix || 
         !programInfo.uniformLocations.uModelMatrix || 
-        !programInfo.uniformLocations.uMaterialColor) {
+        !programInfo.uniformLocations.u_texture) {
         console.error("Failed to locate one or more uniform locations");
     }
 
     return programInfo;
 }
+
 /************************************
  * BUFFER SETUP
  ************************************/
@@ -418,6 +445,17 @@ function initBuffers(gl, object, positionArray, indicesArray) {
     // We are using gl.UNSIGNED_SHORT to enumerate the indices
     const indices = new Uint16Array(indicesArray);
 
+    const texCoords = new Float32Array([
+        0.0, 0.0,  // texture coordinate for vertex 1
+        1.0, 0.0,  // texture coordinate for vertex 2
+        1.0, 1.0,  // texture coordinate for vertex 3
+        0.0, 1.0,  // texture coordinate for vertex 4
+    ]);
+    // Check if the number of vertices matches the indices
+    if (positions.length / 3 !== indices.length) {
+        console.error("Number of vertices does not match the number of indices");
+    }
+
 
     // Allocate and assign a Vertex Array Object to our handle
     var vertexArrayObject = gl.createVertexArray();
@@ -429,12 +467,22 @@ function initBuffers(gl, object, positionArray, indicesArray) {
         vao: vertexArrayObject,
         attributes: {
             position: initPositionAttribute(gl, object.programInfo, positions),
+            texCoord: initTexCoordAttribute(gl, object.programInfo, texCoords),
         },
         indices: initIndexBuffer(gl, indices),
         numVertices: indices.length,
     };
 }
+// Initialize texture coordinates buffer
+function initTexCoordAttribute(gl, programInfo, texCoordArray) {
+    const texCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoordArray, gl.STATIC_DRAW);
 
+    gl.vertexAttribPointer(programInfo.attribLocations.vertexTexCoord, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(programInfo.attribLocations.vertexTexCoord);
+    return texCoordBuffer;
+}
 function initPositionAttribute(gl, programInfo, positionArray) {
 
     // Create a buffer for the positions.
@@ -489,17 +537,12 @@ function initColourAttribute(gl, programInfo, colourArray) {
     // operations to from here out.
     gl.bindBuffer(gl.ARRAY_BUFFER, colourBuffer);
 
-    // Now pass the list of positions into WebGL to build the
-    // shape. We do this by creating a Float32Array from the
-    // JavaScript array, then use it to fill the current buffer.
     gl.bufferData(
         gl.ARRAY_BUFFER, // The kind of buffer this is
         colourArray, // The data in an Array object
         gl.STATIC_DRAW // We are not going to change this data, so it is static
     );
 
-    // Tell WebGL how to pull out the positions from the position
-    // buffer into the vertexPosition attribute.
     {
         const numComponents = 4; // pull out 4 values per iteration, ie vec4
         const type = gl.FLOAT; // the data in the buffer is 32bit floats
