@@ -65,6 +65,17 @@ function main() {
     .catch(error => {
         console.error("Error loading dog.json:", error);
     });
+
+    // //Fetch the dog.json file
+    // fetch('./bird.json')
+    // .then(response => response.json())
+    // .then(dogData => {
+    //     console.log("brid data loaded");
+    //     doDrawing(gl, canvas, dogData);
+    // })
+    // .catch(error => {
+    //     console.error("Error loading dog.json:", error);
+    // });
 }
 function resizeCanvasToFitScreen(canvas) {
     canvas.width = window.innerWidth;  // Set canvas width to window width
@@ -114,17 +125,8 @@ function doDrawing(gl, canvas, inputTriangles) {
         initBuffers(gl, state.objects[i], inputTriangles[i].vertices.flat(),
         inputTriangles[i].triangles.flat());
     }
-    // Update dog position to be above the platform
-    state.objects.forEach((object) => {
-        if (object.name === 'body') {
-            object.model.position = vec3.fromValues(0.0, 3.0, 0.0); // Place dog 2 units above the platform
-        }
-    });
 
     twgl.setAttributePrefix("a_");
-
-   
-    
     state.skybox.texture = twgl.createTexture(gl, {
         target: gl.TEXTURE_CUBE_MAP,
         src: [
@@ -147,14 +149,7 @@ function doDrawing(gl, canvas, inputTriangles) {
         mag: gl.LINEAR,
     });
 
-    // Set the texture for the platform object
-    state.objects.forEach((object) => {
-        if (object.name === 'platform') {
-            gl.activeTexture(gl.TEXTURE0);  // Use texture unit 0
-            gl.bindTexture(gl.TEXTURE_2D, cloudTexture);
-            gl.uniform1i(object.programInfo.uniformLocations.u_texture, 0); // Pass the texture unit to the shader
-        }
-    });
+    
 
     console.log("Starting rendering loop");
     startRendering(gl, state);
@@ -190,6 +185,7 @@ function startRendering(gl, state) {
  * @param  {} gl WebGL2 context
  * @param {number} deltaTime Time between each rendering call
  */
+
 function drawScene(gl, deltaTime, state) {
     gl.enable(gl.CULL_FACE);
     gl.enable(gl.DEPTH_TEST);
@@ -224,20 +220,15 @@ function drawScene(gl, deltaTime, state) {
         projectionMatrix, viewDirectionMatrix);
     var viewDirectionProjectionInverseMatrix =
         m4.inverse(viewDirectionProjectionMatrix);
-
-    state.objects.forEach((object) => {
-        // Use the shader program for the object
+        
+// Render vertices as points for the dog model
+state.objects.forEach((object) => {
+    if (object.name !== "platform") { 
+         // Only render points for dog parts
+         // Use the shader program for the object
         gl.useProgram(object.programInfo.program);
-
-        
-        
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, projectionMatrix);
-
-       
-    
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, viewMatrix);
-
-        
         const modelMatrix = mat4.create();
         //Need to update lights here
         mat4.translate(modelMatrix, modelMatrix, object.model.position);
@@ -266,7 +257,37 @@ function drawScene(gl, deltaTime, state) {
             const offset = 0; // Number of elements to skip before starting
             gl.drawElements(gl.TRIANGLES, object.buffers.numVertices, gl.UNSIGNED_SHORT, offset);
         }
-    });
+    }
+});
+
+// Draw the rest of the scene (platform, dog parts, etc.)
+state.objects.forEach((object) => {
+    if (object.name === "platform") {  // Draw the platform first
+                // Use the shader program for the object
+                gl.useProgram(object.programInfo.program);
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, projectionMatrix);
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, viewMatrix);
+                const modelMatrix = mat4.create();
+                //Need to update lights here
+                mat4.translate(modelMatrix, modelMatrix, object.model.position);
+                mat4.translate(modelMatrix, modelMatrix, object.centroid);
+                mat4.multiply(modelMatrix, modelMatrix, object.model.rotation);
+                mat4.scale(modelMatrix, modelMatrix, object.model.scale);
+                mat4.translate(modelMatrix, modelMatrix, vec3.negate(vec3.create(), object.centroid));
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uModelMatrix, false, modelMatrix);
+                gl.uniform3fv(object.programInfo.uniformLocations.uMaterialColor, object.materialColor);
+        
+                // Draw 
+                {
+                    // Bind the buffer we want to draw
+                    gl.bindVertexArray(object.buffers.vao);
+                    // Draw the object
+                    const offset = 0; // Number of elements to skip before starting
+                    gl.drawElements(gl.TRIANGLES, object.buffers.numVertices, gl.UNSIGNED_SHORT, offset);
+                }
+            }
+        
+});
 
     gl.depthFunc(gl.LEQUAL);
 
@@ -289,6 +310,8 @@ function drawScene(gl, deltaTime, state) {
 /************************************
  * UI EVENTS
  ************************************/
+
+/************************************/
 
 function setupKeypresses(state) {
     document.addEventListener("keydown", (event) => {
@@ -393,12 +416,14 @@ function transformShader(gl) {
 
     const fsSource = `#version 300 es
     precision mediump float;
-    
+    uniform vec3 uMaterialColor; // Material color
     uniform sampler2D u_texture; // texture sampler
     in vec2 v_texCoord; // texture coordinates
     out vec4 fragColor;
 
     void main() {
+        fragColor = vec4(uMaterialColor, 1.0);  // Apply a solid color instead of texture
+
         fragColor = texture(u_texture, v_texCoord); // Apply texture to fragment
     }`;
 
@@ -456,7 +481,6 @@ function initBuffers(gl, object, positionArray, indicesArray) {
         console.error("Number of vertices does not match the number of indices");
     }
 
-
     // Allocate and assign a Vertex Array Object to our handle
     var vertexArrayObject = gl.createVertexArray();
 
@@ -467,7 +491,7 @@ function initBuffers(gl, object, positionArray, indicesArray) {
         vao: vertexArrayObject,
         attributes: {
             position: initPositionAttribute(gl, object.programInfo, positions),
-            texCoord: initTexCoordAttribute(gl, object.programInfo, texCoords),
+            //texCoord: initTexCoordAttribute(gl, object.programInfo, texCoords),
         },
         indices: initIndexBuffer(gl, indices),
         numVertices: indices.length,
@@ -492,9 +516,6 @@ function initPositionAttribute(gl, programInfo, positionArray) {
     // operations to from here out.
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 
-    // Now pass the list of positions into WebGL to build the
-    // shape. We do this by creating a Float32Array from the
-    // JavaScript array, then use it to fill the current buffer.
     gl.bufferData(
         gl.ARRAY_BUFFER, // The kind of buffer this is
         positionArray, // The data in an Array object
