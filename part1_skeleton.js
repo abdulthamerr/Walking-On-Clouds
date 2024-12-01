@@ -23,22 +23,22 @@ void main() {
   outColor = texture(u_skybox, normalize(t.xyz / t.w));
 }
 `;
-
-
-
 main();
 
 /************************************
  * MAIN
  ************************************/
-
-
 function main() {
 
     console.log("Setting up the canvas");
 
     // Find the canavas tag in the HTML document
     const canvas = document.querySelector("#assignmentCanvas");
+     // Resize canvas to fit the window
+     resizeCanvasToFitScreen(canvas);
+
+     // Update size when the window resizes
+     window.addEventListener("resize", () => resizeCanvasToFitScreen(canvas));
 
     // Initialize the WebGL2 context
     var gl = canvas.getContext("webgl2");
@@ -49,37 +49,44 @@ function main() {
             'Check to see you are using a <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API#WebGL_2_2" class="alert-link">modern browser</a>.');
         return;
     }
+    // Initialize the state object
+    const state = {
+        objects: [], // Store all objects here
+        programInfo: null, // Add shader program info later
+    };
 
-    // Hook up the button
-    const fileUploadButton = document.querySelector("#fileUploadButton");
-    fileUploadButton.addEventListener("click", () => {
-        console.log("Submitting file...");
-        let fileInput = document.getElementById('inputFile');
-        let files = fileInput.files;
-        let url = URL.createObjectURL(files[0]);
-
-        fetch(url, {
-            mode: 'no-cors' // 'cors' by default
-        }).then(res => {
-            return res.text();
-        }).then(data => {
-            var inputTriangles = JSON.parse(data);
-
-            doDrawing(gl, canvas, inputTriangles);
-
-        }).catch((e) => {
-            console.error(e);
-        });
-
+        // Fetch the dog.json file
+    fetch('./dog.json')
+    .then(response => response.json())
+    .then(dogData => {
+        console.log("Dog data loaded");
+        doDrawing(gl, canvas, dogData);
+    })
+    .catch(error => {
+        console.error("Error loading dog.json:", error);
     });
+
+    // //Fetch the dog.json file
+    // fetch('./bird.json')
+    // .then(response => response.json())
+    // .then(dogData => {
+    //     console.log("brid data loaded");
+    //     doDrawing(gl, canvas, dogData);
+    // })
+    // .catch(error => {
+    //     console.error("Error loading dog.json:", error);
+    // });
+}
+function resizeCanvasToFitScreen(canvas) {
+    canvas.width = window.innerWidth;  // Set canvas width to window width
+    canvas.height = window.innerHeight; // Set canvas height to window height
 }
 
 function doDrawing(gl, canvas, inputTriangles) {
     // Create a state for our scene
-
     var state = {
         camera: {
-            position: vec3.fromValues(0.0, 3.0, 5.0),
+            position: vec3.fromValues(0.0,10.0, -20),
             center: vec3.fromValues(0.0, 0.0, 0.0),
             up: vec3.fromValues(0.0, 1.0, 0.0),
         },
@@ -100,7 +107,6 @@ function doDrawing(gl, canvas, inputTriangles) {
         selectedIndex: 0,
         hasSelected: false,
     };
-
     for (var i = 0; i < inputTriangles.length; i++) {
         state.objects.push({
             name: inputTriangles[i].name,
@@ -116,12 +122,11 @@ function doDrawing(gl, canvas, inputTriangles) {
         });
         
 
-        initBuffers(gl, state.objects[i], inputTriangles[i].vertices.flat(), inputTriangles[i].triangles.flat());
+        initBuffers(gl, state.objects[i], inputTriangles[i].vertices.flat(),
+        inputTriangles[i].triangles.flat());
     }
 
     twgl.setAttributePrefix("a_");
-    
-    
     state.skybox.texture = twgl.createTexture(gl, {
         target: gl.TEXTURE_CUBE_MAP,
         src: [
@@ -136,13 +141,19 @@ function doDrawing(gl, canvas, inputTriangles) {
     });
 
     setupKeypresses(state);
+    // Create and bind the cloud texture
+    var cloudTexture = twgl.createTexture(gl, {
+        target: gl.TEXTURE_2D,
+        src: '../materials/cloud.png', // Path to cloud texture
+        min: gl.LINEAR,
+        mag: gl.LINEAR,
+    });
 
-    //console.log(state)
+    
 
     console.log("Starting rendering loop");
     startRendering(gl, state);
 }
-
 
 /************************************
  * RENDERING CALLS
@@ -168,26 +179,20 @@ function startRendering(gl, state) {
     // Draw the scene
     requestAnimationFrame(render);
 }
-
 /**
  * Draws the scene. Should be called every frame
  * 
  * @param  {} gl WebGL2 context
  * @param {number} deltaTime Time between each rendering call
  */
-function drawScene(gl, deltaTime, state) {
-    // Set clear colour
-    // gl.clearColor(0.5, 0.5, 0.5, 1.0);
 
-    // // Enable depth testing
-    // gl.enable(gl.DEPTH_TEST);
-    // gl.depthFunc(gl.LEQUAL);
-    // gl.clearDepth(1.0);
+function drawScene(gl, deltaTime, state) {
     gl.enable(gl.CULL_FACE);
     gl.enable(gl.DEPTH_TEST);
 
     // Clear the buffers
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+     
 
     const projectionMatrix = mat4.create();
         mat4.perspective(
@@ -195,7 +200,7 @@ function drawScene(gl, deltaTime, state) {
             glMatrix.toRadian(60), // Field of view in radians
             state.canvas.width / state.canvas.height, // Aspect ratio
             0.1, // Near clipping plane
-            100.0 // Far clipping plane
+            5000.0 // Far clipping plane
         );
 
     const viewMatrix = mat4.create();
@@ -215,32 +220,15 @@ function drawScene(gl, deltaTime, state) {
         projectionMatrix, viewDirectionMatrix);
     var viewDirectionProjectionInverseMatrix =
         m4.inverse(viewDirectionProjectionMatrix);
-
-    state.objects.forEach((object) => {
-        // Use the shader program for the object
-        gl.useProgram(object.programInfo.program);
-
-        // TODO setup projection matrix (this doesn't change)
-        // use same params as in the lab5 example
-        // fovy = 60deg, near=0.1, far=100
-        // Generate the projection matrix using perspective
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
         
+// Render vertices as points for the dog model
+state.objects.forEach((object) => {
+    if (object.name !== "platform") { 
+         // Only render points for dog parts
+         // Use the shader program for the object
+        gl.useProgram(object.programInfo.program);
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, projectionMatrix);
-
-        // TODO update view matrix with state.camera
-        // use mat4.lookAt to generate the view matrix
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
-    
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, viewMatrix);
-
-        // TODO Update model transform
-        // apply modeling transformations in correct order using
-        // object.model.position, object.model.rotation, object.model.scale
-        // for correct rotation wr centroid here is the order of operations 
-        // in reverse order of how they should be applied 
-        // translation (object.model.position), translation(centroid), rotation, scale, translation(negative centroid)
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
         const modelMatrix = mat4.create();
         //Need to update lights here
         mat4.translate(modelMatrix, modelMatrix, object.model.position);
@@ -269,7 +257,37 @@ function drawScene(gl, deltaTime, state) {
             const offset = 0; // Number of elements to skip before starting
             gl.drawElements(gl.TRIANGLES, object.buffers.numVertices, gl.UNSIGNED_SHORT, offset);
         }
-    });
+    }
+});
+
+// Draw the rest of the scene (platform, dog parts, etc.)
+state.objects.forEach((object) => {
+    if (object.name === "platform") {  // Draw the platform first
+                // Use the shader program for the object
+                gl.useProgram(object.programInfo.program);
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, projectionMatrix);
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, viewMatrix);
+                const modelMatrix = mat4.create();
+                //Need to update lights here
+                mat4.translate(modelMatrix, modelMatrix, object.model.position);
+                mat4.translate(modelMatrix, modelMatrix, object.centroid);
+                mat4.multiply(modelMatrix, modelMatrix, object.model.rotation);
+                mat4.scale(modelMatrix, modelMatrix, object.model.scale);
+                mat4.translate(modelMatrix, modelMatrix, vec3.negate(vec3.create(), object.centroid));
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uModelMatrix, false, modelMatrix);
+                gl.uniform3fv(object.programInfo.uniformLocations.uMaterialColor, object.materialColor);
+        
+                // Draw 
+                {
+                    // Bind the buffer we want to draw
+                    gl.bindVertexArray(object.buffers.vao);
+                    // Draw the object
+                    const offset = 0; // Number of elements to skip before starting
+                    gl.drawElements(gl.TRIANGLES, object.buffers.numVertices, gl.UNSIGNED_SHORT, offset);
+                }
+            }
+        
+});
 
     gl.depthFunc(gl.LEQUAL);
 
@@ -289,12 +307,11 @@ function drawScene(gl, deltaTime, state) {
     twgl.drawBufferInfo(gl, quadBufferInfo);
 
 }
-
-
-
 /************************************
  * UI EVENTS
  ************************************/
+
+/************************************/
 
 function setupKeypresses(state) {
     document.addEventListener("keydown", (event) => {
@@ -378,68 +395,68 @@ function setupKeypresses(state) {
         }
     });
 }
-
-
-
 /************************************
  * SHADER SETUP
  ************************************/
 function transformShader(gl) {
-    // Vertex shader source code
     const vsSource = `#version 300 es
     in vec3 aPosition;
+    in vec2 aTexCoord; // Texture coordinates input
 
     uniform mat4 uProjectionMatrix;
     uniform mat4 uViewMatrix;
     uniform mat4 uModelMatrix;
 
+    out vec2 v_texCoord; // Pass texture coordinates to fragment shader
+
     void main() {
+        v_texCoord = aTexCoord; // Pass texture coordinates
         gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
     }`;
 
-    // Fragment shader source code
     const fsSource = `#version 300 es
     precision mediump float;
-
-    uniform vec3 uMaterialColor;
-
+    uniform vec3 uMaterialColor; // Material color
+    uniform sampler2D u_texture; // texture sampler
+    in vec2 v_texCoord; // texture coordinates
     out vec4 fragColor;
 
     void main() {
-        fragColor = vec4(uMaterialColor, 1.0);
+        fragColor = vec4(uMaterialColor, 1.0);  // Apply a solid color instead of texture
+
+        fragColor = texture(u_texture, v_texCoord); // Apply texture to fragment
     }`;
 
     // Create shader program
     const program = initShaderProgram(gl, vsSource, fsSource);
 
-    // Collect program information
     const programInfo = {
         program: program,
         attribLocations: {
             vertexPosition: gl.getAttribLocation(program, 'aPosition'),
+            vertexTexCoord: gl.getAttribLocation(program, 'aTexCoord'),
         },
         uniformLocations: {
             uProjectionMatrix: gl.getUniformLocation(program, 'uProjectionMatrix'),
             uViewMatrix: gl.getUniformLocation(program, 'uViewMatrix'),
             uModelMatrix: gl.getUniformLocation(program, 'uModelMatrix'),
-            uMaterialColor: gl.getUniformLocation(program, 'uMaterialColor'),
+            u_texture: gl.getUniformLocation(program, 'u_texture'),
         },
     };
 
-    // Check for missing locations
-    if (programInfo.attribLocations.vertexPosition === -1) {
-        console.error("Failed to locate attribute 'aPosition'");
+    if (programInfo.attribLocations.vertexPosition === -1 || programInfo.attribLocations.vertexTexCoord === -1) {
+        console.error("Failed to locate one or more attribute locations");
     }
+
     if (!programInfo.uniformLocations.uProjectionMatrix || 
-        !programInfo.uniformLocations.uViewMatrix ||
+        !programInfo.uniformLocations.uViewMatrix || 
         !programInfo.uniformLocations.uModelMatrix || 
-        !programInfo.uniformLocations.uMaterialColor) {
+        !programInfo.uniformLocations.u_texture) {
         console.error("Failed to locate one or more uniform locations");
     }
 
     return programInfo;
 }
-
 
 /************************************
  * BUFFER SETUP
@@ -453,6 +470,16 @@ function initBuffers(gl, object, positionArray, indicesArray) {
     // We are using gl.UNSIGNED_SHORT to enumerate the indices
     const indices = new Uint16Array(indicesArray);
 
+    const texCoords = new Float32Array([
+        0.0, 0.0,  // texture coordinate for vertex 1
+        1.0, 0.0,  // texture coordinate for vertex 2
+        1.0, 1.0,  // texture coordinate for vertex 3
+        0.0, 1.0,  // texture coordinate for vertex 4
+    ]);
+    // Check if the number of vertices matches the indices
+    if (positions.length / 3 !== indices.length) {
+        console.error("Number of vertices does not match the number of indices");
+    }
 
     // Allocate and assign a Vertex Array Object to our handle
     var vertexArrayObject = gl.createVertexArray();
@@ -464,12 +491,22 @@ function initBuffers(gl, object, positionArray, indicesArray) {
         vao: vertexArrayObject,
         attributes: {
             position: initPositionAttribute(gl, object.programInfo, positions),
+            //texCoord: initTexCoordAttribute(gl, object.programInfo, texCoords),
         },
         indices: initIndexBuffer(gl, indices),
         numVertices: indices.length,
     };
 }
+// Initialize texture coordinates buffer
+function initTexCoordAttribute(gl, programInfo, texCoordArray) {
+    const texCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoordArray, gl.STATIC_DRAW);
 
+    gl.vertexAttribPointer(programInfo.attribLocations.vertexTexCoord, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(programInfo.attribLocations.vertexTexCoord);
+    return texCoordBuffer;
+}
 function initPositionAttribute(gl, programInfo, positionArray) {
 
     // Create a buffer for the positions.
@@ -479,9 +516,6 @@ function initPositionAttribute(gl, programInfo, positionArray) {
     // operations to from here out.
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 
-    // Now pass the list of positions into WebGL to build the
-    // shape. We do this by creating a Float32Array from the
-    // JavaScript array, then use it to fill the current buffer.
     gl.bufferData(
         gl.ARRAY_BUFFER, // The kind of buffer this is
         positionArray, // The data in an Array object
@@ -515,8 +549,6 @@ function initPositionAttribute(gl, programInfo, positionArray) {
 
     return positionBuffer;
 }
-
-
 function initColourAttribute(gl, programInfo, colourArray) {
 
     // Create a buffer for the positions.
@@ -526,17 +558,12 @@ function initColourAttribute(gl, programInfo, colourArray) {
     // operations to from here out.
     gl.bindBuffer(gl.ARRAY_BUFFER, colourBuffer);
 
-    // Now pass the list of positions into WebGL to build the
-    // shape. We do this by creating a Float32Array from the
-    // JavaScript array, then use it to fill the current buffer.
     gl.bufferData(
         gl.ARRAY_BUFFER, // The kind of buffer this is
         colourArray, // The data in an Array object
         gl.STATIC_DRAW // We are not going to change this data, so it is static
     );
 
-    // Tell WebGL how to pull out the positions from the position
-    // buffer into the vertexPosition attribute.
     {
         const numComponents = 4; // pull out 4 values per iteration, ie vec4
         const type = gl.FLOAT; // the data in the buffer is 32bit floats
@@ -582,7 +609,6 @@ function initIndexBuffer(gl, elementArray) {
 
     return indexBuffer;
 }
-
 /**
  * 
  * @param {array of x,y,z vertices} vertices 
