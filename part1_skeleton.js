@@ -40,6 +40,11 @@ function main() {
     // Find the canavas tag in the HTML document
     const canvas = document.querySelector("#assignmentCanvas");
 
+    resizeCanvasToFitScreen(canvas);
+
+     // Update size when the window resizes
+     window.addEventListener("resize", () => resizeCanvasToFitScreen(canvas));
+
     // Initialize the WebGL2 context
     var gl = canvas.getContext("webgl2");
 
@@ -50,28 +55,22 @@ function main() {
         return;
     }
 
-    // Hook up the button
-    const fileUploadButton = document.querySelector("#fileUploadButton");
-    fileUploadButton.addEventListener("click", () => {
-        console.log("Submitting file...");
-        let fileInput = document.getElementById('inputFile');
-        let files = fileInput.files;
-        let url = URL.createObjectURL(files[0]);
+    const state = {
+        objects: [], // Store all objects here
+        programInfo: null, // Add shader program info later
+    };
 
-        fetch(url, {
-            mode: 'no-cors' // 'cors' by default
-        }).then(res => {
-            return res.text();
-        }).then(data => {
-            var inputTriangles = JSON.parse(data);
-
-            doDrawing(gl, canvas, inputTriangles);
-
-        }).catch((e) => {
-            console.error(e);
-        });
-
+        // Fetch the dog.json file
+    fetch('./bird.json')
+    .then(response => response.json())
+    .then(dogData => {
+        console.log("Dog data loaded");
+        doDrawing(gl, canvas, dogData);
+    })
+    .catch(error => {
+        console.error("Error loading dog.json:", error);
     });
+
 }
 
 function doDrawing(gl, canvas, inputTriangles) {
@@ -110,7 +109,8 @@ function doDrawing(gl, canvas, inputTriangles) {
                 scale: vec3.fromValues(1.0, 1.0, 1.0),
             },
             programInfo: transformShader(gl),
-            buffers: undefined,
+            buffers: null,
+            texture: null,
             centroid: calculateCentroid(inputTriangles[i].vertices),
             materialColor: inputTriangles[i].material.diffuse, // Add material color
         });
@@ -176,29 +176,22 @@ function startRendering(gl, state) {
  * @param {number} deltaTime Time between each rendering call
  */
 function drawScene(gl, deltaTime, state) {
-    // Set clear colour
-    // gl.clearColor(0.5, 0.5, 0.5, 1.0);
 
-    // // Enable depth testing
-    // gl.enable(gl.DEPTH_TEST);
-    // gl.depthFunc(gl.LEQUAL);
-    // gl.clearDepth(1.0);
     gl.enable(gl.CULL_FACE);
     gl.enable(gl.DEPTH_TEST);
 
     // Clear the buffers
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const projectionMatrix = mat4.create();
-        mat4.perspective(
-            projectionMatrix,
-            glMatrix.toRadian(60), // Field of view in radians
-            state.canvas.width / state.canvas.height, // Aspect ratio
-            0.1, // Near clipping plane
-            100.0 // Far clipping plane
-        );
+    var projectionMatrix = mat4.create();
+    var fovy = 60.0 * Math.PI / 180.0; // Vertical field of view in radians
+    var aspect = state.canvas.clientWidth / state.canvas.clientHeight; // Aspect ratio of the canvas
+    var near = 0.1; // Near clipping plane
+    var far = 100.0; // Far clipping plane
+    // Generate the projection matrix using perspective
+    mat4.perspective(projectionMatrix, fovy, aspect, near, far);
 
-    const viewMatrix = mat4.create();
+    var viewMatrix = mat4.create();
     mat4.lookAt(
         viewMatrix,
         state.camera.position, // Camera position
@@ -220,28 +213,14 @@ function drawScene(gl, deltaTime, state) {
         // Use the shader program for the object
         gl.useProgram(object.programInfo.program);
 
-        // TODO setup projection matrix (this doesn't change)
-        // use same params as in the lab5 example
-        // fovy = 60deg, near=0.1, far=100
-        // Generate the projection matrix using perspective
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
-        
-        gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, projectionMatrix);
 
-        // TODO update view matrix with state.camera
-        // use mat4.lookAt to generate the view matrix
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
+        gl.uniformMatrix4fv(object.programInfo.uniformLocations.projection, false, projectionMatrix);
+
     
-        gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, viewMatrix);
+        gl.uniformMatrix4fv(object.programInfo.uniformLocations.view, false, viewMatrix);
 
-        // TODO Update model transform
-        // apply modeling transformations in correct order using
-        // object.model.position, object.model.rotation, object.model.scale
-        // for correct rotation wr centroid here is the order of operations 
-        // in reverse order of how they should be applied 
-        // translation (object.model.position), translation(centroid), rotation, scale, translation(negative centroid)
-        // link to corresponding uniform object.programInfo.uniformLocations.[...]
-        const modelMatrix = mat4.create();
+
+        var modelMatrix = mat4.create();
         //Need to update lights here
         mat4.translate(modelMatrix, modelMatrix, object.model.position);
 
@@ -255,14 +234,24 @@ function drawScene(gl, deltaTime, state) {
 
         gl.uniformMatrix4fv(object.programInfo.uniformLocations.uModelMatrix, false, modelMatrix);
 
-        // TODO Update other uniforms like colors
-
         gl.uniform3fv(object.programInfo.uniformLocations.uMaterialColor, object.materialColor);
+        
+        gl.uniform3fv(object.programInfo.uniformLocations.cameraPosition, state.camera.position);
+
+        //Update lights
+        gl.uniform3fv(object.programInfo.uniformLocations.light0Position, state.lights[0].position);
+        gl.uniform3fv(object.programInfo.uniformLocations.light0Colour, state.lights[0].colour);
+        gl.uniform1f(object.programInfo.uniformLocations.light0Strength, state.lights[0].strength);
+    
 
         // Draw 
         {
             // Bind the buffer we want to draw
             gl.bindVertexArray(object.buffers.vao);
+
+            if(object.texture != null) {
+                gl.uniform1i(object.programInfo.uniformLocations.sampler, object.texture);
+            }
             
 
             // Draw the object
@@ -387,54 +376,104 @@ function setupKeypresses(state) {
 function transformShader(gl) {
     // Vertex shader source code
     const vsSource = `#version 300 es
-    in vec3 aPosition;
+in vec3 aPosition;
+in vec3 aNormal;
 
-    uniform mat4 uProjectionMatrix;
-    uniform mat4 uViewMatrix;
-    uniform mat4 uModelMatrix;
+uniform mat4 uProjectionMatrix;
+uniform mat4 uViewMatrix;
+uniform mat4 uModelMatrix;
 
-    void main() {
-        gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
-    }`;
+uniform vec3 uCameraPosition;
+
+out vec3 oNormal;
+out vec3 oFragPosition;
+out vec3 oCameraPosition;
+
+void main() {
+    gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
+    oFragPosition = (uModelMatrix * vec4(aPosition, 1.0)).xyz;
+
+    oNormal = normalize((uModelMatrix * vec4(aNormal, 0.0)).xyz);  // Need to convert normal to world space
+    oCameraPosition = uCameraPosition;
+}
+`;
 
     // Fragment shader source code
     const fsSource = `#version 300 es
-    precision mediump float;
+precision highp float;
 
-    uniform vec3 uMaterialColor;
+uniform vec3 uMaterialColor;
 
-    out vec4 fragColor;
+in vec3 oNormal;
+in vec3 oFragPosition;
+in vec3 oCameraPosition;
 
-    void main() {
-        fragColor = vec4(uMaterialColor, 1.0);
-    }`;
+uniform vec3 uLight0Position;
+uniform vec3 uLight0Colour;
+uniform float uLight0Strength;
+
+out vec4 fragColor;
+
+void main() {
+    vec3 lightDirection = normalize(uLight0Position - oFragPosition);
+
+    // Diffuse lighting
+    float diff = max(dot(oNormal, lightDirection), 0.0);
+    vec3 diffuse = diff * uLight0Colour;
+
+    // Ambient lighting
+    vec3 ambient = vec3(0.3, 0.3, 0.3);
+
+    // Combine ambient and diffuse lighting, modulate by material color
+    fragColor = vec4((diffuse + ambient) * uMaterialColor, 1.0);
+}
+
+`;
 
     // Create shader program
-    const program = initShaderProgram(gl, vsSource, fsSource);
+    const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
 
-    // Collect program information
     const programInfo = {
-        program: program,
+        // The actual shader program
+        program: shaderProgram,
+        // The attribute locations. WebGL will use there to hook up the buffers to the shader program.
+        // NOTE: it may be wise to check if these calls fail by seeing that the returned location is not -1.
         attribLocations: {
-            vertexPosition: gl.getAttribLocation(program, 'aPosition'),
+            vertexPosition: gl.getAttribLocation(shaderProgram, 'aPosition'),
+            vertexNormal: gl.getAttribLocation(shaderProgram, 'aNormal'),
         },
         uniformLocations: {
-            uProjectionMatrix: gl.getUniformLocation(program, 'uProjectionMatrix'),
-            uViewMatrix: gl.getUniformLocation(program, 'uViewMatrix'),
-            uModelMatrix: gl.getUniformLocation(program, 'uModelMatrix'),
-            uMaterialColor: gl.getUniformLocation(program, 'uMaterialColor'),
+            projection: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
+            view: gl.getUniformLocation(shaderProgram, 'uViewMatrix'),
+            model: gl.getUniformLocation(shaderProgram, 'uModelMatrix'),
+            uMaterialColor: gl.getUniformLocation(shaderProgram, 'uMaterialColor'),
+            cameraPosition: gl.getUniformLocation(shaderProgram, 'uCameraPosition'),
+            light0Position: gl.getUniformLocation(shaderProgram, 'uLight0Position'),
+            light0Colour: gl.getUniformLocation(shaderProgram, 'uLight0Colour'),
+            light0Strength: gl.getUniformLocation(shaderProgram, 'uLight0Strength'),
+            // TODO location for sampler uniform from the fragment shader
+            // sampler: gl.getUniformLocation(shaderProgram, 'uTexture'),
+            
         },
     };
 
-    // Check for missing locations
-    if (programInfo.attribLocations.vertexPosition === -1) {
-        console.error("Failed to locate attribute 'aPosition'");
-    }
-    if (!programInfo.uniformLocations.uProjectionMatrix || 
-        !programInfo.uniformLocations.uViewMatrix ||
-        !programInfo.uniformLocations.uModelMatrix || 
-        !programInfo.uniformLocations.uMaterialColor) {
-        console.error("Failed to locate one or more uniform locations");
+    if (programInfo.attribLocations.uProjectionMatrix === -1 ||
+        programInfo.attribLocations.uViewMatrix === -1 ||
+        programInfo.attribLocations.uModelMatrix === -1 ||
+        programInfo.uniformLocations.uMaterialColor === -1 ||
+        programInfo.attribLocations.vertexPosition === -1 ||
+        programInfo.attribLocations.vertexColour === -1 ||
+        programInfo.attribLocations.vertexNormal === -1 ||
+        programInfo.attribLocations.vertexUV === -1 ||
+        programInfo.uniformLocations.projection === -1 ||
+        programInfo.uniformLocations.view === -1 ||
+        programInfo.uniformLocations.model === -1 ||
+        programInfo.uniformLocations.light0Position === -1 ||
+        programInfo.uniformLocations.light0Colour === -1 ||
+        programInfo.uniformLocations.light0Strength === -1 ||
+        programInfo.uniformLocations.cameraPosition === -1 || 
+        programInfo.uniformLocations.sampler === -1) {
+        printError('Shader Location Error', 'One or more of the uniform and attribute variables in the shaders could not be located');
     }
 
     return programInfo;
@@ -445,6 +484,23 @@ function transformShader(gl) {
  * BUFFER SETUP
  ************************************/
 
+function computeNormal(v0, v1, v2) {
+    const edge1 = vec3.create();
+    const edge2 = vec3.create();
+    const normal = vec3.create();
+
+    // Compute the edges of the triangle
+    vec3.subtract(edge1, v1, v0); // v1 - v0
+    vec3.subtract(edge2, v2, v0); // v2 - v0
+
+    // Compute the cross product to get the normal
+    vec3.cross(normal, edge1, edge2);
+    vec3.normalize(normal, normal); // Normalize the normal vector
+
+    return normal;
+}
+
+
 function initBuffers(gl, object, positionArray, indicesArray) {
 
     // We have 3 vertices with x, y, and z values
@@ -452,6 +508,46 @@ function initBuffers(gl, object, positionArray, indicesArray) {
 
     // We are using gl.UNSIGNED_SHORT to enumerate the indices
     const indices = new Uint16Array(indicesArray);
+
+    const normals = new Float32Array(positions.length);
+
+    for (let i = 0; i < indices.length; i += 3) {
+        const i0 = indices[i];
+        const i1 = indices[i + 1];
+        const i2 = indices[i + 2];
+
+        const v0 = vec3.fromValues(positions[i0 * 3], positions[i0 * 3 + 1], positions[i0 * 3 + 2]);
+        const v1 = vec3.fromValues(positions[i1 * 3], positions[i1 * 3 + 1], positions[i1 * 3 + 2]);
+        const v2 = vec3.fromValues(positions[i2 * 3], positions[i2 * 3 + 1], positions[i2 * 3 + 2]);
+
+        const normal = computeNormal(v0, v1, v2);
+
+        // Add the computed normal to each of the triangle's vertices
+        normals[i0 * 3] += normal[0];
+        normals[i0 * 3 + 1] += normal[1];
+        normals[i0 * 3 + 2] += normal[2];
+
+        normals[i1 * 3] += normal[0];
+        normals[i1 * 3 + 1] += normal[1];
+        normals[i1 * 3 + 2] += normal[2];
+
+        normals[i2 * 3] += normal[0];
+        normals[i2 * 3 + 1] += normal[1];
+        normals[i2 * 3 + 2] += normal[2];
+    }
+
+    // Normalize the normals
+    for (let i = 0; i < normals.length; i += 3) {
+        const normal = vec3.fromValues(normals[i], normals[i + 1], normals[i + 2]);
+        vec3.normalize(normal, normal);
+        normals[i] = normal[0];
+        normals[i + 1] = normal[1];
+        normals[i + 2] = normal[2];
+    }
+
+    // const normalArray = new Float32Array([
+    //     // normal array here
+    // ]);
 
 
     // Allocate and assign a Vertex Array Object to our handle
@@ -464,6 +560,7 @@ function initBuffers(gl, object, positionArray, indicesArray) {
         vao: vertexArrayObject,
         attributes: {
             position: initPositionAttribute(gl, object.programInfo, positions),
+            normal: initNormalAttribute(gl, object.programInfo, normals),
         },
         indices: initIndexBuffer(gl, indices),
         numVertices: indices.length,
@@ -596,4 +693,55 @@ function calculateCentroid(vertices) {
     vec3.scale(center,center,1/vertices.length);
     return center;
 
+}
+
+function resizeCanvasToFitScreen(canvas) {
+    canvas.width = window.innerWidth;  // Set canvas width to window width
+    canvas.height = window.innerHeight; // Set canvas height to window height
+}
+
+function initNormalAttribute(gl, programInfo, normalArray) {
+    if(normalArray != null && normalArray.length > 0){
+        // Create a buffer for the positions.
+        const normalBuffer = gl.createBuffer();
+
+        // Select the buffer as the one to apply buffer
+        // operations to from here out.
+        gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+
+        // Now pass the list of positions into WebGL to build the
+        // shape. We do this by creating a Float32Array from the
+        // JavaScript array, then use it to fill the current buffer.
+        gl.bufferData(
+            gl.ARRAY_BUFFER, // The kind of buffer this is
+            normalArray, // The data in an Array object
+            gl.STATIC_DRAW // We are not going to change this data, so it is static
+        );
+
+        // Tell WebGL how to pull out the positions from the position
+        // buffer into the vertexPosition attribute.
+        {
+            const numComponents = 3; // pull out 4 values per iteration, ie vec3
+            const type = gl.FLOAT; // the data in the buffer is 32bit floats
+            const normalize = false; // don't normalize between 0 and 1
+            const stride = 0; // how many bytes to get from one set of values to the next
+            // Set stride to 0 to use type and numComponents above
+            const offset = 0; // how many bytes inside the buffer to start from
+
+            // Set the information WebGL needs to read the buffer properly
+            gl.vertexAttribPointer(
+                programInfo.attribLocations.vertexNormal,
+                numComponents,
+                type,
+                normalize,
+                stride,
+                offset
+            );
+            // Tell WebGL to use this attribute
+            gl.enableVertexAttribArray(
+                programInfo.attribLocations.vertexNormal);
+        }
+
+        return normalBuffer;
+    }
 }

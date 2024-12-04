@@ -12,7 +12,7 @@ function setup() {
     `;
 
     // Insert the tag into the HMTL document
-    document.getElementById('myNavBar').appendChild(navTag);
+    //document.getElementById('myNavBar').appendChild(navTag);
 }
 
 /**
