@@ -59,9 +59,9 @@ function main() {
     // Create a state for our scene
     var state = {
         camera: {
-            position: vec3.fromValues(0.0, 4.0, 8.0),
-            center: vec3.fromValues(0.0, 0.0, 0.0),
-            up: vec3.fromValues(0.0, 1.0, 0.0),
+            position: vec3.fromValues(-13.0, 5.0, 0.0), // Positioned along +X axis
+            center: vec3.fromValues(0.0, 0.0, 0.0),  // Looking at the origin
+            up: vec3.fromValues(0.0, 1.0, 0.0),  
         },
         lights: [
             {
@@ -223,11 +223,23 @@ function startRendering(gl, state) {
 }
 
 function updateState(deltaTime, state) {
-    // Update state as you wish here.  Gets called every frame.
-    state.objects.forEach((object) => {
-        mat4.rotate(object.model.rotation, object.model.rotation, 0.0, vec3.fromValues(1.0, 1.0, 1.0));
+    // Speed
+    const platformSpeed = 0.5;
+
+    // Update platform positions
+    state.objects.forEach((object, index) => {
+        if (index > 0 && index < state.objects.length - 1) {
+            object.model.position[0] -= platformSpeed;
+
+            // Reset platform position when it goes out of view
+            if (object.model.position[0] < -50) {
+                object.model.position[0] += 450; // Adjust based on platform spacing
+            }
+        }
     });
+
 }
+
 
 function drawScene(gl, state) {
 
@@ -1126,7 +1138,8 @@ function setupKeypresses(state) {
         }
 
         requestAnimationFrame(handleJump); // Continue animation loop
-    }
+    }      
+    
 
     handleJump(); // Start animating
 
