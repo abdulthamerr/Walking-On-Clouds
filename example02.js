@@ -1054,6 +1054,11 @@ function setupKeypresses(state) {
                 vec3.add(state.objects[0].model.position, state.objects[0].model.position, vec3.fromValues(0.0, 0.0, -0.5));
 
                 break;
+            
+            case "KeyT":
+                // Move forward
+                vec3.add(state.objects[0].model.position, state.objects[0].model.position, vec3.fromValues(0.5, 0.0, 0.0));
+                break;
             default:
                 break;
         }
