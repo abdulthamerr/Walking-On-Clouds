@@ -1033,12 +1033,14 @@ function setupKeypresses(state) {
                 vec3.transformMat4(state.camera.center, state.camera.center, rotationMatrixDown);
                 break;
             case "KeyR":
-                // Move the second object up along the Y-axis
-                state.objects[0].position[1] += 5;
+                //move right
+                vec3.add(state.objects[0].model.position, state.objects[0].model.position, vec3.fromValues(0.0, 0.0, 0.5));
+
                 break;
             case "KeyF":
-                // Move the second object down along the Y-axis
-                state.objects[0].position[1] -= 5;
+                // Move left
+                vec3.add(state.objects[0].model.position, state.objects[0].model.position, vec3.fromValues(0.0, 0.0, -0.5));
+
                 break;
             default:
                 break;
