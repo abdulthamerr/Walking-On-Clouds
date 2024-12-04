@@ -65,9 +65,9 @@ function main() {
         },
         lights: [
             {
-                position: vec3.fromValues(0.0, 5.0, 5.0),
+                position: vec3.fromValues(0.0, 2.0, 0.0),
                 colour: vec3.fromValues(1.0, 1.0, 1.0),
-                strength: 10.0,
+                strength: 100.0,
             }
         ],
         objects: [
@@ -1196,7 +1196,6 @@ function setupKeypresses(state) {
             case "KeyL":
                 //move right
                 vec3.add(state.objects[0].model.position, state.objects[0].model.position, vec3.fromValues(0.0, 0.0, 0.5));
-
                 break;
             case "KeyJ":
                 // Move left
