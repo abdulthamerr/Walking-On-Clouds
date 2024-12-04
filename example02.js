@@ -134,6 +134,67 @@ function main() {
                 buffers: null,
                 texture: null,
             },
+
+            // Obstacle for First Platform
+            {
+                model: {
+                    position: vec3.fromValues(30.0, 1.0, 1.5), // Slightly above the platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(1.5, 1.5, 2.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+                isTriangle: true,
+            },
+            // Obstacle for Second Platform
+            {
+                model: {
+                    position: vec3.fromValues(95.0, 1.0, -1.5), // Slightly above the platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(1.5, 1.5, 2.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+                isTriangle: true,
+            },
+             // Obstacle for Third Platform
+             {
+                model: {
+                    position: vec3.fromValues(155.0, 1.0, 1.5), // Slightly above the platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(1.5, 1.5, 2.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+                isTriangle: true,
+            },
+            // Obstacle for Forth Platform
+            {
+                model: {
+                    position: vec3.fromValues(295.0, 1.0, -1.0), // Slightly above the platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(1.5, 1.5, 2.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+                isTriangle: true,
+            },
+            // Obstacle for Fifth Platform
+            {
+                model: {
+                    position: vec3.fromValues(385.0, 1.0, 1.5), // Slightly above the platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(1.5, 1.5, 2.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+                isTriangle: true,
+            },
             
 
             {
@@ -182,8 +243,15 @@ function main() {
     setupKeypresses(state);
 
     state.objects.forEach((object) => {
-        initCubeBuffers(gl, object);
+        if (object.isTriangle) {
+            // Initialize triangular buffer for obstacles
+            initTriangleBuffers(gl, object);
+        } else {
+            // Initialize cube buffer for platforms or other objects
+            initCubeBuffers(gl, object);
+        }
     });
+    
 
     //state.objects[1].texture = loadTexture(gl, 0, null);
     //setupUploadButton(gl);
@@ -238,7 +306,31 @@ function updateState(deltaTime, state) {
         }
     });
 
+    // Collision detection
+    const player = state.objects[0]; 
+    state.objects.forEach((object) => {
+        if (object.isTriangle) {
+            if (checkCollision(player, object)) {
+                location.reload(); // Refresh the website
+            }
+        }
+    });
 }
+
+// Function to check collision between 2 things
+function checkCollision(obj1, obj2) {
+    const obj1Pos = obj1.model.position;
+    const obj2Pos = obj2.model.position;
+    const obj1Scale = obj1.model.scale;
+    const obj2Scale = obj2.model.scale;
+
+    return (
+        Math.abs(obj1Pos[0] - obj2Pos[0]) < (obj1Scale[0] + obj2Scale[0]) / 2 &&
+        Math.abs(obj1Pos[1] - obj2Pos[1]) < (obj1Scale[1] + obj2Scale[1]) / 2 &&
+        Math.abs(obj1Pos[2] - obj2Pos[2]) < (obj1Scale[2] + obj2Scale[2]) / 2
+    );
+}
+
 
 
 function drawScene(gl, state) {
@@ -1101,12 +1193,12 @@ function setupKeypresses(state) {
                 vec3.transformMat4(state.camera.position, state.camera.position, rotationMatrixDown);
                 vec3.transformMat4(state.camera.center, state.camera.center, rotationMatrixDown);
                 break;
-            case "KeyR":
+            case "KeyL":
                 //move right
                 vec3.add(state.objects[0].model.position, state.objects[0].model.position, vec3.fromValues(0.0, 0.0, 0.5));
 
                 break;
-            case "KeyF":
+            case "KeyJ":
                 // Move left
                 vec3.add(state.objects[0].model.position, state.objects[0].model.position, vec3.fromValues(0.0, 0.0, -0.5));
 
@@ -1144,6 +1236,47 @@ function setupKeypresses(state) {
     handleJump(); // Start animating
 
 }
+
+function initTriangleBuffers(gl, object) {
+    const positionArray = new Float32Array([
+        // Pyramid base (aligned flat on the platform, centered at Y = -1.2)
+        -0.5, -1.2,  0.5,  // Bottom-left vertex of the base
+         0.5, -1.2,  0.5,  // Bottom-right vertex of the base
+         0.5, -1.2, -0.5,  // Top-right vertex of the base
+        -0.5, -1.2, -0.5,  // Top-left vertex of the base
+
+        // Pyramid tip (raised above the base)
+         0.0,  0.3,  0.0,  // Tip of the pyramid
+    ]);
+
+    const normalArray = new Float32Array([
+        // Base normals (pointing down)
+        0.0, -1.0, 0.0,  // Bottom face normal
+        0.0, -1.0, 0.0,
+        0.0, -1.0, 0.0,
+        0.0, -1.0, 0.0,
+
+        // Side face normals (pointing outward)
+        0.0,  1.0,  0.0,
+        0.0,  1.0,  0.0,
+    ]);
+
+    const indicesArray = new Uint16Array([
+        // Base face (two triangles forming a square)
+        0, 1, 2,
+        0, 2, 3,
+
+        // Side faces (connecting base to apex)
+        0, 1, 4, // Side 1
+        1, 2, 4, // Side 2
+        2, 3, 4, // Side 3
+        3, 0, 4, // Side 4
+    ]);
+
+    initBuffers(gl, object, positionArray, normalArray, null, null, indicesArray);
+}
+
+
 
 function resizeCanvasToFitScreen(canvas) {
     canvas.width = window.innerWidth;  // Set canvas width to window width
