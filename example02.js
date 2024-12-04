@@ -906,56 +906,62 @@ function initIndexBuffer(gl, elementArray) {
  * TEXTURES
  *****************************/
 
-function loadTexture(gl, textureId, url) {
-    url = "../materials/sky.png";
-    var texture = gl.createTexture();
+// function loadTexture(gl, textureId, url) {
+//     url = "../materials/sky.png";
+//     var texture = gl.createTexture();
 
-    gl.activeTexture(gl.TEXTURE0 + textureId);
+//     gl.activeTexture(gl.TEXTURE0 + textureId);
 
-    gl.bindTexture(gl.TEXTURE_2D, texture);
+//     gl.bindTexture(gl.TEXTURE_2D, texture);
 
     
-    const level = 0;
-    const internalFormat = gl.RGBA;
-    const width = 1;
-    const height = 1;
-    const border = 0;
-    const format = gl.RGBA;
-    const type = gl.UNSIGNED_BYTE;
-    const data = new Uint8Array([
-        0, 255, 255, 255,
-    ]);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, width, height, border,
-                format, type, data);
+//     const level = 0;
+//     const internalFormat = gl.RGBA;
+//     const width = 1;
+//     const height = 1;
+//     const border = 0;
+//     const format = gl.RGBA;
+//     const type = gl.UNSIGNED_BYTE;
+//     const data = new Uint8Array([
+//         0, 255, 255, 255,
+//     ]);
+//     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+//     gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, width, height, border,
+//                 format, type, data);
 
-    // set the filtering so we don't need mips
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+//     // set the filtering so we don't need mips
+//     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+//     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+//     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+//     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     
-    if(url != null) {
-        console.log("Loading...");
-        var image = new Image();
-        image.addEventListener('load', () => {
-            console.log("Loaded ")
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
-                format, type, image);
+//     if(url != null) {
+//         console.log("Loading...");
+//         var image = new Image();
+//         image.addEventListener('load', () => {
+//             console.log("Loaded ")
+//             gl.bindTexture(gl.TEXTURE_2D, texture);
+//             gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+//                 format, type, image);
                 
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        });
-        image.src = url;
-    }
+//                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+//                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+//                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+//                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+//         });
+//         image.src = url;
+//     }
 
-    return textureId;
-}
+//     return textureId;
+// }
 
 function setupKeypresses(state) {
+    let isJumping = false;
+    let jumpDirection = 1; // 1 for up, -1 for down
+    let jumpHeight = 0; // Current jump height
+    const maxJumpHeight = 2; // Maximum height of the jump
+    const jumpSpeed = 0.1; // Speed of the jump
+
     document.addEventListener("keydown", (event) => {
         console.log(event.code);
 
@@ -964,6 +970,12 @@ function setupKeypresses(state) {
 
         // Camera movement controls
         switch(event.code) {
+            case "Space":
+                if (!isJumping) {
+                    isJumping = true; // Start the jump
+                    jumpDirection = 1; // Begin moving upwards
+                }
+                break;
             case "ArrowRight":
                 // Move light to the right (already in your original code)
                 state.lights[0].position[0] += 0.1;
@@ -1046,6 +1058,32 @@ function setupKeypresses(state) {
                 break;
         }
     });
+
+    function handleJump() {
+        if (isJumping) {
+            jumpHeight += jumpDirection * jumpSpeed;
+
+            // Check if maximum height is reached
+            if (jumpHeight >= maxJumpHeight) {
+                jumpDirection = -1; // Start moving down
+            }
+
+            // Check end of jump
+            if (jumpHeight <= 0) {
+                jumpHeight = 0;
+                isJumping = false; // Stop jump
+                jumpDirection = 1; // Reset direction for next jump
+            }
+
+            // Update the object's position
+            state.objects[0].model.position[1] += jumpDirection * jumpSpeed;
+        }
+
+        requestAnimationFrame(handleJump); // Continue animation loop
+    }
+
+    handleJump(); // Start animating
+
 }
 
 function resizeCanvasToFitScreen(canvas) {
