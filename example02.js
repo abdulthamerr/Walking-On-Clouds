@@ -81,16 +81,61 @@ function main() {
                 buffers: null,
                 texture: null,
             },
-            {
+            { // First Platform
                 model: {
                     position: vec3.fromValues(0.0, -1.4, 0.0),
                     rotation: mat4.create(), // Identity matrix
-                    scale: vec3.fromValues(20.0, 0.4, 1.0),
+                    scale: vec3.fromValues(40.0, 0.4, 3.0), 
                 },
                 programInfo: uvVisualShader(gl),
                 buffers: null,
                 texture: null,
             },
+            { // Second Platform
+                model: {
+                    position: vec3.fromValues(90.0, -1.4, 0.0), // Gap after first platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(40.0, 0.4, 3.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+            },
+
+            { // Third Platform
+                model: {
+                    position: vec3.fromValues(180.0, -1.4, 0.0), // Gap after first platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(40.0, 0.4, 3.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+            },
+
+            { // Forth Platform
+                model: {
+                    position: vec3.fromValues(270.0, -1.4, 0.0), // Gap after first platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(40.0, 0.4, 3.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+            },
+            
+            { // Fifth Platform
+                model: {
+                    position: vec3.fromValues(360.0, -1.4, 0.0), // Gap after first platform
+                    rotation: mat4.create(),
+                    scale: vec3.fromValues(40.0, 0.4, 3.0),
+                },
+                programInfo: uvVisualShader(gl),
+                buffers: null,
+                texture: null,
+            },
+            
+
             {
                 model: {
                     position: vec3.fromValues(0.0, 0.0, 0.0),
@@ -196,7 +241,7 @@ function drawScene(gl, state) {
     var fovy = 60.0 * Math.PI / 180.0; // Vertical field of view in radians
     var aspect = state.canvas.clientWidth / state.canvas.clientHeight; // Aspect ratio of the canvas
     var near = 0.1; // Near clipping plane
-    var far = 100.0; // Far clipping plane
+    var far = 360.0; // Far clipping plane
     // Generate the projection matrix using perspective
     mat4.perspective(projectionMatrix, fovy, aspect, near, far);
 
